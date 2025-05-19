@@ -1,0 +1,120 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Trauma Charge Capture - PWA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#4CAF50">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png" sizes="192x192">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+    input, button {
+      margin: 5px 0;
+      padding: 10px;
+      width: 100%;
+      max-width: 400px;
+    }
+    video {
+      width: 100%;
+      max-width: 500px;
+      border: 2px solid #ccc;
+    }
+    ul {
+      background: #fff;
+      padding: 10px;
+      max-width: 400px;
+      list-style: none;
+    }
+    li {
+      padding: 5px 0;
+    }
+  </style>
+  <script type="module">
+    import { BrowserMultiFormatReader } from 'https://cdn.jsdelivr.net/npm/@zxing/browser@latest';
+
+    const codeReader = new BrowserMultiFormatReader();
+    let activePatient = "";
+    let scannedItems = {};
+
+    window.onload = () => {
+      const previewElem = document.getElementById('preview');
+      const startButton = document.getElementById('startScan');
+      const exportButton = document.getElementById('closePatient');
+      const logList = document.getElementById('scanLog');
+      const patientInput = document.getElementById('activePatient');
+
+      startButton.onclick = () => {
+        codeReader.decodeOnceFromVideoDevice(undefined, previewElem).then(result => {
+          handleScan(result.getText());
+        }).catch(err => console.error(err));
+      };
+
+      exportButton.onclick = () => {
+        if (!activePatient || !scannedItems[activePatient]) {
+          alert("No patient data to export.");
+          return;
+        }
+        let csv = "Item Code,Quantity\n";
+        const items = scannedItems[activePatient];
+        for (const code in items) {
+          csv += `${code},${items[code]}\n`;
+        }
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${activePatient}_${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+        a.click();
+        delete scannedItems[activePatient];
+        activePatient = "";
+        patientInput.value = "";
+        logList.innerHTML = "";
+      };
+
+      function handleScan(code) {
+        if (/^\d{9}$/.test(code) || code.startsWith("TRM-") || code.startsWith("P1-")) {
+          activePatient = code;
+          patientInput.value = code;
+          if (!scannedItems[activePatient]) scannedItems[activePatient] = {};
+          log(`Active patient set to: ${code}`);
+        } else if (activePatient) {
+          if (!scannedItems[activePatient][code]) {
+            scannedItems[activePatient][code] = 1;
+          } else {
+            scannedItems[activePatient][code]++;
+          }
+          log(`Scanned: ${code} (x${scannedItems[activePatient][code]})`);
+        } else {
+          log("Scan a patient ID first.", true);
+        }
+      }
+
+      function log(message, error = false) {
+        const item = document.createElement("li");
+        item.textContent = message;
+        if (error) item.style.color = "red";
+        logList.appendChild(item);
+      }
+
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('service-worker.js');
+      }
+    };
+  </script>
+</head>
+<body>
+  <h2>Trauma Charge Capture (PWA)</h2>
+  <input type="text" id="activePatient" placeholder="Active Patient ID (Scan to set)" readonly>
+  <button id="startScan">Scan Barcode</button>
+  <button id="closePatient">Close Patient & Export CSV</button>
+  <video id="preview"></video>
+  <h3>Scanned Items:</h3>
+  <ul id="scanLog"></ul>
+</body>
+</html>
